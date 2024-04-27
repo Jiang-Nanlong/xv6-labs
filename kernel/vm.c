@@ -5,7 +5,10 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#ifdef LAB3_PGTBL
+#include "spinlock.h"
+#include "proc.h"
+#endif
 /*
  * the kernel's page table.
  */
@@ -132,7 +135,12 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
+#ifdef LAB3_PGTBL
+	struct proc *p = myproc();
+	pte = walk(p->kernelpagetable, va, 0);
+#else
   pte = walk(kernel_pagetable, va, 0);
+#endif  
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -379,6 +387,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
+#ifdef LAB3_PGTBL
+	return copyin_new(pagetable, dst, srcva, len);
+#else
   uint64 n, va0, pa0;
 
   while(len > 0){
@@ -396,6 +407,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
+#endif
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -405,6 +417,9 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
+#ifdef LAB3_PGTBL
+	return copyinstr_new(pagetable, dst, srcva, max);
+#else
   uint64 n, va0, pa0;
   int got_null = 0;
 
@@ -439,4 +454,110 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+#endif
 }
+
+
+#ifdef LAB3_PGTBL
+#ifdef LAB3_PGTBL_1
+void
+vmprintHelper(pagetable_t pagetable, int level){
+	for(int i=0;i<512; i++){
+		pte_t pte = pagetable[i];
+		if(pte & PTE_V){
+			uint64 pa = PTE2PA(pte);
+			if(level==0){
+				printf("..%d: pte %p pa %p\n",i, pte, pa);
+				vmprintHelper((pagetable_t)pa, level+1);	
+			}else if(level==1){
+				printf(".. ..%d: pte %p pa %p\n",i, pte, pa);
+				vmprintHelper((pagetable_t)pa, level+1);
+			}else{
+				printf(".. .. ..%d: pte %p pa %p\n",i, pte, pa);
+			}
+		}
+	}	
+}
+
+void
+vmprint(pagetable_t pagetable){
+  printf("page table %p\n",pagetable);
+	vmprintHelper(pagetable, 0);
+}
+#endif
+
+void
+kvmmapkernel(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm){
+  if(mappages(pagetable, va, sz, pa, perm) != 0)
+    panic("kvmmapkernel");
+}
+
+pagetable_t
+kvmcreate(){
+  pagetable_t pagetable = uvmcreate();
+
+  kvmmapkernel(pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  kvmmapkernel(pagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  //kvmmapkernel(pagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  kvmmapkernel(pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  kvmmapkernel(pagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  kvmmapkernel(pagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  kvmmapkernel(pagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  
+  return pagetable;
+}
+
+
+void freewalkkernelpagetable(pagetable_t kernelpagetable){
+	for(int i = 0; i < 512; i++){
+    pte_t pte = kernelpagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      uint64 child = PTE2PA(pte);
+      freewalkkernelpagetable((pagetable_t)child);
+      kernelpagetable[i] = 0;
+    }
+  }
+  kfree((void*)kernelpagetable);
+}
+
+int
+kvmcopymapping(pagetable_t old, pagetable_t new, uint64 st, uint64 sz)
+{
+  pte_t *pte;
+  uint64 pa, i;
+  uint flags;
+
+  if(sz > PLIC) return -1;
+
+  for(i = PGROUNDUP(st); i < sz; i += PGSIZE){
+    if((pte = walk(old, i, 0)) == 0)
+      panic("uvmcopy: pte should exist");
+    if((*pte & PTE_V) == 0)
+      panic("uvmcopy: page not present");
+    pa = PTE2PA(*pte);
+    flags = PTE_FLAGS(*pte) & (~PTE_U);
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      goto err;
+    }
+  }
+  return 0;
+
+ err:
+  uvmunmap(new, PGROUNDUP(st), (i-PGROUNDUP(st)) / PGSIZE, 0);
+  return -1;
+}
+
+uint64
+kvmdeallocmappings(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+{
+  if(newsz >= oldsz)
+    return oldsz;
+
+  if(PGROUNDUP(newsz) < PGROUNDUP(oldsz)){
+    int npages = (PGROUNDUP(oldsz) - PGROUNDUP(newsz)) / PGSIZE;
+    uvmunmap(pagetable, PGROUNDUP(newsz), npages, 0);
+  }
+  return newsz;
+}
+#endif
