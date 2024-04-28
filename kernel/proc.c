@@ -112,7 +112,17 @@ found:
     release(&p->lock);
     return 0;
   }
-
+  
+#ifdef LAB4_TRAPS
+  if((p->trapframesave = (struct trapframe *)kalloc()) == 0){
+    release(&p->lock);
+    return 0;
+  }
+  p->interval = 0;
+  p->handler = 0;
+  p->spend = 0;
+  p->otheralarmrunning = 0;
+#endif
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -139,6 +149,11 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+#ifdef LAB4_TRAPS
+  if(p->trapframesave)
+    kfree((void*)p->trapframesave);
+  p->trapframesave = 0;
+#endif
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -149,6 +164,12 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+#ifdef LAB4_TRAPS
+  p->interval = 0;
+  p->handler = 0;
+  p->spend = 0;
+  p->otheralarmrunning = 0;
+#endif
   p->state = UNUSED;
 }
 
@@ -483,10 +504,14 @@ scheduler(void)
       }
       release(&p->lock);
     }
+#if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
       asm volatile("wfi");
     }
+#else
+    ;
+#endif
   }
 }
 
