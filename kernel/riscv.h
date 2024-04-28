@@ -311,20 +311,6 @@ r_ra()
   return x;
 }
 
-#ifndef LAB4_TRAPS
-#define LAB4_TRAPS 1
-
-#ifdef LAB4_TRAPS
-static inline uint64
-r_fp()
-{
-  uint64 x;
-  asm volatile("mv %0, s0" : "=r" (x));
-  return x;
-}
-#endif
-#endif
-
 // flush the TLB.
 static inline void
 sfence_vma()

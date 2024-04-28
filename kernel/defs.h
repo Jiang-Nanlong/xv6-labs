@@ -8,9 +8,6 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
-#ifdef LAB4_TRAPS
-struct trapframe;
-#endif
 
 // bio.c
 void            binit(void);
@@ -83,9 +80,6 @@ int             pipewrite(struct pipe*, uint64, int);
 void            printf(char*, ...);
 void            panic(char*) __attribute__((noreturn));
 void            printfinit(void);
-#ifdef LAB4_TRAPS
-void    	    backtrace(void); 
-#endif
 
 // proc.c
 int             cpuid(void);

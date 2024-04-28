@@ -132,14 +132,3 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
-
-#ifdef LAB4_TRAPS
-void backtrace(void){
-  uint64 fp = r_fp();
-  while(fp != PGROUNDUP(fp)){
-    uint64 ra = *(uint64*)(fp-8);
-    printf("%p\n",ra);
-    fp = *(uint64*)(fp-16);
-  }
-}
-#endif

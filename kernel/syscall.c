@@ -104,10 +104,6 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
-#ifdef LAB4_TRAPS
-extern uint64 sys_sigalarm(void);
-extern uint64 sys_sigreturn(void);
-#endif
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -131,10 +127,6 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-#ifdef LAB4_TRAPS
-[SYS_sigalarm]  sys_sigalarm,
-[SYS_sigreturn]  sys_sigreturn,
-#endif
 };
 
 void
