@@ -68,13 +68,13 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
 #ifdef LAB5_LAZY
-  } else if(r_scause() == 13 || r_scause() == 15){
+  } else if(r_scause() == 13 || r_scause() == 15){  // 如果是因为page fault导致trap
     char *mem;
-    uint64 va = r_stval();
-    if(va >= p->sz){
+    uint64 va = r_stval();  // 读取导致page fault的虚拟地址
+    if(va >= p->sz){  // 判断是否小于p->sz
       p->killed = 1;
     }else{
-      if((PGROUNDDOWN(p->trapframe->sp)-PGSIZE) != PGROUNDDOWN(va)){
+      if((PGROUNDDOWN(p->trapframe->sp)-PGSIZE) != PGROUNDDOWN(va)){  // 判断此处的虚拟地址是否指向的是stack下方的guard page。如果不是，则分配物理内存
         if((mem= (char*)kalloc()) == 0){  
           p->killed = 1;
         }else{

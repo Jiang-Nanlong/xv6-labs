@@ -49,11 +49,11 @@ sys_sbrk(void)
   addr = myproc()->sz;
 #ifdef LAB5_LAZY
   uint64 newSize = addr + n;
-  if(newSize >= MAXVA)
+  if(newSize >= MAXVA)  // 如果修改后的地址空间大于MAXVA
     return addr;
   
-  if(n<0){
-    uvmunmap(myproc()->pagetable, PGROUNDUP(newSize), (PGROUNDUP(addr)-PGROUNDUP(newSize))/PGSIZE, 1);
+  if(n<0){  // 如果是缩小地址空间，那么直接去除多余的页表映射，并释放物理内存
+    uvmunmap(myproc()->pagetable, PGROUNDUP(newSize), (PGROUNDUP(addr)-PGROUNDUP(newSize))/PGSIZE, 1);  // 注意这里释放地址空间的开始是在PGROUNDUP(newSize)
   }
   myproc()->sz = newSize;
 #endif

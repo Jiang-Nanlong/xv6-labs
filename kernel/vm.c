@@ -181,13 +181,14 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
-    if((pte = walk(pagetable, a, 0)) == 0)
+    if((pte = walk(pagetable, a, 0)) == 0)  
+    // 如果没有找到要释放的虚拟地址的pte，则说明lazy allocation下该地址并没有分配物理块，自然也找不到对应的pte，直接跳过即可
 #ifdef LAB5_LAZY
       continue;
 #else
       panic("uvmunmap: walk");
 #endif
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0)  // 同上，如果要释放的虚拟地址的pte是无效的，则说明该地址并没有分配物理块，自然也找不到对应的pte，直接跳过即可
 #ifdef LAB5_LAZY
       continue;
 #else
@@ -315,7 +316,7 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
 int
-uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)  // 该函数仅用在fork函数中，用于拷贝父进程的页表
 {
   pte_t *pte;
   uint64 pa, i;
@@ -323,13 +324,15 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
+    if((pte = walk(old, i, 0)) == 0)  
+    // 如果没有找到旧页表中某个虚拟地址对应的pte，则说明并没有使用该虚拟地址，也就不会创建对应的每一级页表项，
+    // 自然更不会给该虚拟地址分配物理块，所以也就找不到对应的pte
 #ifdef LAB5_LAZY
       continue;
 #else
       panic("uvmcopy: pte should exist");
 #endif
-    if((*pte & PTE_V) == 0)
+    if((*pte & PTE_V) == 0) // 同上，如果就页表的某个pte是无效的，说明没有给该虚拟地址分配内存
 #ifdef LAB5_LAZY
       continue;
 #else
@@ -376,7 +379,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if(pa0 == 0)  // 说明此时用户态的内存空间中，并没给dstva分配对应的物理内存，也就没法向其中复制内容，所以在lazy allocation下要分配内存空间
 #ifndef LAB5_LAZY
       return -1;
 #else
@@ -416,7 +419,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if(pa0 == 0) // 说明此时用户态的内存空间中，并没给srcva分配对应的物理内存，也就没法使用这块内存，所以在lazy allocation下要分配内存空间
 #ifndef LAB5_LAZY
       return -1;
 #else
