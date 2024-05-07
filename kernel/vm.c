@@ -5,7 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "spinlock.h"
+#include "proc.h"
 /*
  * the kernel's page table.
  */
@@ -181,9 +182,17 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
+#ifdef LAB5_LAZY
+      continue;
+#else
       panic("uvmunmap: walk");
+#endif
     if((*pte & PTE_V) == 0)
+#ifdef LAB5_LAZY
+      continue;
+#else
       panic("uvmunmap: not mapped");
+#endif
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -315,9 +324,17 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
+#ifdef LAB5_LAZY
+      continue;
+#else
       panic("uvmcopy: pte should exist");
+#endif
     if((*pte & PTE_V) == 0)
+#ifdef LAB5_LAZY
+      continue;
+#else
       panic("uvmcopy: page not present");
+#endif
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -360,7 +377,22 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
+#ifndef LAB5_LAZY
       return -1;
+#else
+    {
+      if(dstva >= myproc()->sz)
+        return -1;
+      
+      char *mem = (char*)kalloc();
+      pa0 = (uint64)mem;
+      memset(mem, 0, PGSIZE);
+      if(mappages(pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+        kfree(mem);
+        return -1;
+      }
+    }
+#endif
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -385,7 +417,22 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
+#ifndef LAB5_LAZY
       return -1;
+#else
+    {
+      if(srcva >= myproc()->sz)
+        return -1;
+      
+      char *mem = (char*)kalloc();
+      pa0 = (uint64)mem;
+      memset(mem, 0, PGSIZE);
+      if(mappages(pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+        kfree(mem);
+        return -1;
+      }
+    }
+#endif
     n = PGSIZE - (srcva - va0);
     if(n > len)
       n = len;
