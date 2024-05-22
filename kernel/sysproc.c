@@ -47,21 +47,8 @@ sys_sbrk(void)
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
-#ifdef LAB5_LAZY
-  uint64 newSize = addr + n;
-  if(newSize >= MAXVA)
-    return addr;
-  
-  if(n<0){
-    uvmunmap(myproc()->pagetable, PGROUNDUP(newSize), (PGROUNDUP(addr)-PGROUNDUP(newSize))/PGSIZE, 1);
-  }
-  myproc()->sz = newSize;
-#endif
-
-#ifndef LAB5_LAZY
   if(growproc(n) < 0)
     return -1;
-#endif
   return addr;
 }
 

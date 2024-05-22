@@ -5,8 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-#include "spinlock.h"
-#include "proc.h"
+
 /*
  * the kernel's page table.
  */
@@ -30,9 +29,6 @@ kvminit()
 
   // virtio mmio disk interface
   kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-
-  // CLINT
-  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
   // PLIC
   kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -69,7 +65,7 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
-pte_t *
+static pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
@@ -122,26 +118,6 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
     panic("kvmmap");
 }
 
-// translate a kernel virtual address to
-// a physical address. only needed for
-// addresses on the stack.
-// assumes va is page aligned.
-uint64
-kvmpa(uint64 va)
-{
-  uint64 off = va % PGSIZE;
-  pte_t *pte;
-  uint64 pa;
-  
-  pte = walk(kernel_pagetable, va, 0);
-  if(pte == 0)
-    panic("kvmpa");
-  if((*pte & PTE_V) == 0)
-    panic("kvmpa");
-  pa = PTE2PA(*pte);
-  return pa+off;
-}
-
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned. Returns 0 on success, -1 if walk() couldn't
@@ -182,17 +158,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-#ifdef LAB5_LAZY
-      continue;
-#else
       panic("uvmunmap: walk");
-#endif
     if((*pte & PTE_V) == 0)
-#ifdef LAB5_LAZY
-      continue;
-#else
       panic("uvmunmap: not mapped");
-#endif
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -324,17 +292,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-#ifdef LAB5_LAZY
-      continue;
-#else
       panic("uvmcopy: pte should exist");
-#endif
     if((*pte & PTE_V) == 0)
-#ifdef LAB5_LAZY
-      continue;
-#else
       panic("uvmcopy: page not present");
-#endif
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -377,22 +337,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
-#ifndef LAB5_LAZY
       return -1;
-#else
-    {
-      if(dstva >= myproc()->sz)
-        return -1;
-      
-      char *mem = (char*)kalloc();
-      pa0 = (uint64)mem;
-      memset(mem, 0, PGSIZE);
-      if(mappages(pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-        kfree(mem);
-        return -1;
-      }
-    }
-#endif
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -417,22 +362,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
-#ifndef LAB5_LAZY
       return -1;
-#else
-    {
-      if(srcva >= myproc()->sz)
-        return -1;
-      
-      char *mem = (char*)kalloc();
-      pa0 = (uint64)mem;
-      memset(mem, 0, PGSIZE);
-      if(mappages(pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-        kfree(mem);
-        return -1;
-      }
-    }
-#endif
     n = PGSIZE - (srcva - va0);
     if(n > len)
       n = len;
