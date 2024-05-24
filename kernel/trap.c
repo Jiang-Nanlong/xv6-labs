@@ -29,6 +29,37 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+#ifdef LAB6_COW
+int 
+cowfault(pagetable_t pagetable, uint64 va){
+  if(va >= MAXVA)
+    return -1;
+
+  pte_t *pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return -1;
+  
+  if((*pte & PTE_U) == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_COW) == 0)
+    return -1;
+  
+  uint64 pa1 = PTE2PA(*pte);
+  uint64 pa2 = (uint64) kalloc();
+  if(pa2 == 0){
+    printf("cowfault kalloc failed\n");
+    return -1;
+  }
+
+  memmove((void*)pa2, (void*)pa1, PGSIZE);
+
+  kfree((void*)pa1);   // 这个地方也遇到错误了，因为即便是pa1的引用数为1了，他还是要分配一个新的内存块，然后重新建立映射，所以这里一定要等到memmove结束以后才能释放pa1
+
+  *pte = PA2PTE(pa2) | PTE_V|PTE_U|PTE_R|PTE_X| PTE_W;
+  *pte = (*pte) & (~PTE_COW);
+  
+  return 0;
+}
+#endif
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -65,6 +96,9 @@ usertrap(void)
     intr_on();
 
     syscall();
+  }else if(r_scause() == 15){
+    if(cowfault(p->pagetable, r_stval()) < 0)
+      p->killed = 1;
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

@@ -23,10 +23,20 @@ struct {
   struct run *freelist;
 } kmem;
 
+#ifdef LAB6_COW
+struct {
+  struct spinlock lock;
+  uint8 refcount[(PHYSTOP-KERNBASE)/PGSIZE];
+} ref;
+#endif
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+#ifdef LAB6_COW
+  initlock(&ref.lock, "ReferenceCount");
+#endif
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -35,9 +45,25 @@ freerange(void *pa_start, void *pa_end)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
-  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
+  for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE){
+#ifdef LAB6_COW
+    ref.refcount[((uint64)p - KERNBASE)/PGSIZE] = 1;   // 这里是因为最开始kinit内会遍历所有的内存块，然后每个内存块调用一次kfree，如果内存块的引用数一开始为0的话会报错。不过这里也可以不写，而是修改kfree内的逻辑
+#endif
     kfree(p);
+  }
 }
+
+#ifdef LAB6_COW
+void
+incref(uint64 pa){
+  int pn = (pa - KERNBASE) / PGSIZE;
+  acquire(&ref.lock);
+  if(pa >= PHYSTOP || ref.refcount[pn] < 1)
+    panic("incref error");
+  ref.refcount[pn] ++;
+  release(&ref.lock);
+}
+#endif
 
 // Free the page of physical memory pointed at by v,
 // which normally should have been returned by a
@@ -50,6 +76,19 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+#ifdef LAB6_COW
+  acquire(&ref.lock);
+  int pn = ((uint64)pa - KERNBASE) / PGSIZE;
+  if(ref.refcount[pn] < 1)
+    panic("kfree ref error");
+  ref.refcount[pn] --;
+  int count = ref.refcount[pn];
+  release(&ref.lock);
+  
+  if(count > 0)
+    return;
+#endif
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -76,7 +115,16 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
+#ifdef LAB6_COW
+    acquire(&ref.lock);
+    int pn = ((uint64) r-KERNBASE) / PGSIZE;
+    if(ref.refcount[pn] != 0)
+      panic("kalloc ref erroe");
+    ref.refcount[pn] = 1;
+    release(&ref.lock);
+#endif
+  }
   return (void*)r;
 }
