@@ -314,6 +314,32 @@ sys_open(void)
       end_op();
       return -1;
     }
+#ifdef LAB9_FS_2
+    if((omode & O_NOFOLLOW) == 0){
+      int i=0;
+      struct inode *dp;
+      for(; i<10 && ip->type == T_SYMLINK; i++){ // i控制递归次数，ip->type == T_SYMLINK为了防止link文件指向的还是link文件
+        if(readi(ip, 0, (uint64)path, 0, MAXPATH) == 0){  // 读取inode ip中的内容到path
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        if((dp = namei(path)) == 0){  // 找到path对应的inode dp
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        iunlockput(ip);  // 释放ip的锁，并减少一个引用计数
+        ip=dp;  // 把ip指向dp开始下一轮递归
+        ilock(ip);
+      }
+      if(i == 10){  // 如果递归深度已经到10
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+    }
+#endif
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
@@ -484,3 +510,35 @@ sys_pipe(void)
   }
   return 0;
 }
+
+#ifdef LAB9_FS_2
+uint64
+sys_symlink(void){
+  struct inode *ip;
+  char target[MAXPATH], path[MAXPATH];
+  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+  
+  begin_op();
+  if((ip = namei(target)) != 0){
+    if(ip->type == T_DIR){
+      end_op();
+      return -1;
+    }
+  }
+  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){  // 创建path路经所代表文件的dinode，类型为T_SYMLINK，返回新文件的inode
+    end_op();
+    return -1;
+  }
+
+  if(writei(ip, 0, (uint64)target, 0, strlen(target)) < 0){  // 把target路径写入到新创建文件的索引节点
+    end_op();
+    return -1;
+  }
+
+  iunlockput(ip);
+  end_op();
+
+  return 0;
+}
+#endif
