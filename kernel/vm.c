@@ -5,6 +5,13 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#ifdef LAB_MMAP
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "fcntl.h"
+#include "file.h"
+#include "proc.h"
+#endif
 
 /*
  * the kernel's page table.
@@ -429,3 +436,92 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+#ifdef LAB_MMAP
+int
+mmap_pgfault(uint64 va){  // 处理vma中的缺页问题
+  va = PGROUNDDOWN(va);
+  struct proc *p = myproc();
+  struct vma *v = 0;
+
+  for(int i = 0; i < NVMA; i++){  // 先找到发生缺页的虚拟地址位于哪个vma中，因为vma中连续虚拟地址的读写权限和修改后是否写会，都在vma结构体中定义
+    if(p->vmas[i].used == 1 && va >= p->vmas[i].start && va < p->vmas[i].end){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+
+  if(v == 0)
+    return -1;
+  
+  char* pa = (char*)kalloc();  // 分配一个物理页
+  if(pa == 0) return -1;
+  memset(pa, 0, PGSIZE);
+
+  int flags = PTE_U;
+  if(v->prot & PROT_READ)
+    flags |= PTE_R;
+  if(v->prot & PROT_WRITE)
+    flags |= PTE_W;
+
+  if(mappages(p->pagetable, va, PGSIZE, (uint64)pa, flags) < 0){  // 建立映射
+    kfree((void*)pa);
+    return -1;
+  }
+
+  uint64 offset = va - v->start + v->offset;   // 计算该虚拟地址对应文件中的偏移量
+  ilock(v->f->ip);
+  if(readi(v->f->ip, 0, (uint64)pa, offset, PGSIZE) < 0){  // 这里的第二个参数为什么是0，不是1？
+    iunlock(v->f->ip);
+    return -1;
+  }
+  iunlock(v->f->ip);
+  return 0;
+}
+
+int
+vaIsMapped(pagetable_t pagetable, uint64 va){
+  pte_t *pte;
+  return ((pte = walk(pagetable, va, 0)) != 0 && ((*pte) & PTE_V) != 0);
+}
+
+int
+mnumap(uint64 addr, int length){
+  struct proc *p = myproc();
+  struct vma *v = 0;
+  
+  for(int i = 0; i < NVMA; i++){  // 也是先找到vma结构体
+    if(p->vmas[i].used && addr >= p->vmas[i].start && addr < p->vmas[i].end){
+      v = &p->vmas[i];
+      break;
+    }
+  }
+  if(v == 0) return -1;
+
+  length = PGROUNDUP(length);
+  addr = PGROUNDDOWN(addr);
+  if(addr + length >= v->end){  // 如果要删除映射的范围超过了整个vma的末尾，就把范围修改为vma的末尾
+    length = v->end - addr;
+  }
+  int page_count = length / PGSIZE;
+  for(int i = 0;i < page_count; i++){  // 以内存块为单位删除映射关系
+    if(vaIsMapped(p->pagetable, addr)){
+      if(v->flags & MAP_SHARED){  // 如果vma要求修改后写回磁盘
+        uint64 offset = addr - v->start + v->offset;  // 计算虚拟地址addr对应的文件的偏移量
+        begin_op();
+        ilock(v->f->ip);
+        writei(v->f->ip, 1, addr, offset, PGSIZE);
+        iunlock(v->f->ip);
+        end_op();
+      }
+      uvmunmap(p->pagetable, addr, 1, 1);
+    }
+    addr += PGSIZE;
+  }
+  if(length == v->length){  // 如果是把整个vma的虚拟地址范围的映射关系都删除了，就可以直接关闭文件描述符了
+    fileclose(v->f);
+    v->used = 0;
+  }
+  return 0;
+}
+#endif

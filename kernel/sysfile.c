@@ -15,6 +15,9 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#ifdef LAB_MMAP
+#include "memlayout.h"
+#endif
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -314,32 +317,6 @@ sys_open(void)
       end_op();
       return -1;
     }
-#ifdef LAB9_FS_2
-    if((omode & O_NOFOLLOW) == 0){
-      int i=0;
-      struct inode *dp;
-      for(; i<10 && ip->type == T_SYMLINK; i++){ // i控制递归次数，ip->type == T_SYMLINK为了防止link文件指向的还是link文件
-        if(readi(ip, 0, (uint64)path, 0, MAXPATH) == 0){  // 读取inode ip中的内容到path
-          iunlockput(ip);
-          end_op();
-          return -1;
-        }
-        if((dp = namei(path)) == 0){  // 找到path对应的inode dp
-          iunlockput(ip);
-          end_op();
-          return -1;
-        }
-        iunlockput(ip);  // 释放ip的锁，并减少一个引用计数
-        ip=dp;  // 把ip指向dp开始下一轮递归
-        ilock(ip);
-      }
-      if(i == 10){  // 如果递归深度已经到10
-        iunlockput(ip);
-        end_op();
-        return -1;
-      }
-    }
-#endif
   }
 
   if(ip->type == T_DEVICE && (ip->major < 0 || ip->major >= NDEV)){
@@ -511,34 +488,63 @@ sys_pipe(void)
   return 0;
 }
 
-#ifdef LAB9_FS_2
+#ifdef LAB_MMAP
 uint64
-sys_symlink(void){
-  struct inode *ip;
-  char target[MAXPATH], path[MAXPATH];
-  if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
-    return -1;
+sys_mmap(void){
+  //void* mmap(uint64 addr, int length, int prot, int flags, struct file* fd, int offset);
+  uint64 addr;
+  int length, prot, flags, offset;
+  struct file* fd;
+  struct proc* p = myproc();
   
-  begin_op();
-  if((ip = namei(target)) != 0){
-    if(ip->type == T_DIR){
-      end_op();
-      return -1;
+  if(argaddr(0, &addr) < 0 || argint(1, &length) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 ||
+     argfd(4, 0, &fd) < 0 || argint(5, &offset) < 0)
+    return 0xffffffffffffffff;
+  
+  if((!fd->readable && (prot & PROT_READ)) || 
+    (!fd->writable && (prot & PROT_WRITE) && (flags & MAP_SHARED)))   // 如果prot是可读的，但是文件本身不可读；或者prot要求是可写的，但是文件本身不可写，返回错误
+    return 0xffffffffffffffff;
+
+  struct vma *new_vma = 0;
+  for(int i = 0; i < NVMA; i++){  // 找到一个空的vma
+    if(!p->vmas[i].used){
+      new_vma = &p->vmas[i];
+      break;
     }
   }
-  if((ip = create(path, T_SYMLINK, 0, 0)) == 0){  // 创建path路经所代表文件的dinode，类型为T_SYMLINK，返回新文件的inode
-    end_op();
-    return -1;
+  if(new_vma == 0){
+    panic("mmap: no free vma");
   }
-
-  if(writei(ip, 0, (uint64)target, 0, strlen(target)) < 0){  // 把target路径写入到新创建文件的索引节点
-    end_op();
-    return -1;
+  
+  uint64 vaminend = MMAPEND;
+  for(int i = 0; i < NVMA; i++){  // 这里是把进程虚拟地址的末尾写成trapframe，进程在给vma分配虚拟地址时从高地址往低地址找，找到已经使用的vma中，开始的虚拟地址最小的那个地址，在它前边申请一块虚拟地址
+    if(p->vmas[i].used && p->vmas[i].start < vaminend)
+      vaminend = p->vmas[i].start;
   }
+  length = PGROUNDUP(length);  // 要分配的虚拟地址的长度
 
-  iunlockput(ip);
-  end_op();
+  vaminend -= length;  // 要分配的虚拟地址的起始地址
+  new_vma->used = 1;
+  new_vma->start = vaminend;
+  new_vma->end = vaminend + length;
+  new_vma->length = length;
+  new_vma->offset = offset;
+  new_vma->prot = prot;
+  new_vma->flags = flags;
+  new_vma->f = fd;
 
-  return 0;
+  filedup(fd);
+
+  return new_vma->start;
+}
+
+uint64
+sys_munmap(void){
+  uint64 addr;
+  int length;
+  if(argaddr(0, &addr) < 0 || argint(1, &length) < 0)
+    return -1;
+
+  return mnumap(addr, length);
 }
 #endif

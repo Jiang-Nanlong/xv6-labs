@@ -297,7 +297,14 @@ fork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
-
+#ifdef LAB_MMAP
+  for(int i = 0; i < NVMA; i++){  // 复制时，让子进程的vmas数组和父进程的相同
+    if(p->vmas[i].used){
+      np->vmas[i] = p->vmas[i];
+      filedup(p->vmas[i].f);
+    }
+  }
+#endif
   pid = np->pid;
 
   np->state = RUNNABLE;
@@ -352,6 +359,14 @@ exit(int status)
       p->ofile[fd] = 0;
     }
   }
+#ifdef LAB_MMAP
+  for(int i = 0; i < NVMA; i++){  // 在退出时，依次释放vma中的映射的内存块
+    if(p->vmas[i].used){
+      mnumap(p->vmas[i].start, p->vmas[i].length);
+      p->vmas[i].used = 0;
+    }
+  }
+#endif
 
   begin_op();
   iput(p->cwd);
