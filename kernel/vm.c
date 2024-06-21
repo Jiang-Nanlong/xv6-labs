@@ -472,6 +472,7 @@ mmap_pgfault(uint64 va){  // 处理vma中的缺页问题
   uint64 offset = va - v->start + v->offset;   // 计算该虚拟地址对应文件中的偏移量
   ilock(v->f->ip);
   if(readi(v->f->ip, 0, (uint64)pa, offset, PGSIZE) < 0){  // 这里的第二个参数为什么是0，不是1？
+    // 因为pa是一个物理地址，而不是用户态的虚拟地址，而且此时处于内核态，直接映射就行了
     iunlock(v->f->ip);
     return -1;
   }
