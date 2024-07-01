@@ -82,19 +82,19 @@ pipewrite(struct pipe *pi, uint64 addr, int n)
 
   acquire(&pi->lock);
   for(i = 0; i < n; i++){
-    while(pi->nwrite == pi->nread + PIPESIZE){  //DOC: pipewrite-full
+    while(pi->nwrite == pi->nread + PIPESIZE){  //DOC: pipewrite-full 缓冲区已满
       if(pi->readopen == 0 || pr->killed){
         release(&pi->lock);
         return -1;
       }
-      wakeup(&pi->nread);
-      sleep(&pi->nwrite, &pi->lock);
+      wakeup(&pi->nread);  // 唤醒读进程
+      sleep(&pi->nwrite, &pi->lock);  // 睡眠写进程
     }
     if(copyin(pr->pagetable, &ch, addr + i, 1) == -1)
       break;
     pi->data[pi->nwrite++ % PIPESIZE] = ch;
   }
-  wakeup(&pi->nread);
+  wakeup(&pi->nread);  // 唤醒读进程
   release(&pi->lock);
   return i;
 }
@@ -107,12 +107,12 @@ piperead(struct pipe *pi, uint64 addr, int n)
   char ch;
 
   acquire(&pi->lock);
-  while(pi->nread == pi->nwrite && pi->writeopen){  //DOC: pipe-empty
+  while(pi->nread == pi->nwrite && pi->writeopen){  //DOC: pipe-empty  缓冲区空了
     if(pr->killed){
       release(&pi->lock);
       return -1;
     }
-    sleep(&pi->nread, &pi->lock); //DOC: piperead-sleep
+    sleep(&pi->nread, &pi->lock); //DOC: piperead-sleep  睡眠读进程，此时没有唤醒写进程是因为写进程并没有睡眠（因为写进程如果处于睡眠，那么说明缓冲区已满，显然这里并没有满），唤醒没有意义
   }
   for(i = 0; i < n; i++){  //DOC: piperead-copy
     if(pi->nread == pi->nwrite)
@@ -121,7 +121,7 @@ piperead(struct pipe *pi, uint64 addr, int n)
     if(copyout(pr->pagetable, addr + i, &ch, 1) == -1)
       break;
   }
-  wakeup(&pi->nwrite);  //DOC: piperead-wakeup
+  wakeup(&pi->nwrite);  //DOC: piperead-wakeup 
   release(&pi->lock);
   return i;
 }

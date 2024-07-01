@@ -59,7 +59,7 @@ gets(char *buf, int max)
   char c;
 
   for(i=0; i+1 < max; ){
-    cc = read(0, &c, 1);
+    cc = read(0, &c, 1);  // 使用read系统调用从文件描述符0，也就是console读取一个字符
     if(cc < 1)
       break;
     buf[i++] = c;

@@ -27,6 +27,8 @@ uservec:
 	# swap a0 and sscratch
         # so that a0 is TRAPFRAME
         csrrw a0, sscratch, a0
+        # 交换之后，a0原来是函数调用的第一个参数，现在保存在sscratch中，而之前sscratch中保存的是trapframe的虚拟地址。
+        # 现在交换二者，也就是把a0寄存器的值保存在sscratch中了，a0现在表示的是trapframe的虚拟地址，之后的每个寄存器都被陆续保存在（偏移量）+a0的位置
 
         # save the user registers in TRAPFRAME
         sd ra, 40(a0)
@@ -61,7 +63,7 @@ uservec:
         sd t6, 280(a0)
 
 	# save the user a0 in p->trapframe->a0
-        csrr t0, sscratch
+        csrr t0, sscratch  # 这里交换之前，sscratch中存的是原来a0的值
         sd t0, 112(a0)
 
         # restore kernel stack pointer from p->trapframe->kernel_sp
@@ -75,7 +77,7 @@ uservec:
 
         # restore kernel page table from p->trapframe->kernel_satp
         ld t1, 0(a0)
-        csrw satp, t1
+        csrw satp, t1   # 为什么更换为内核页表后，代码未崩溃
         sfence.vma zero, zero
 
         # a0 is no longer valid, since the kernel page
@@ -93,13 +95,13 @@ userret:
         # a1: user page table, for satp.
 
         # switch to the user page table.
-        csrw satp, a1
-        sfence.vma zero, zero
+        csrw satp, a1  # usertrapret函数最后把用户页表的地址作为第二个参数穿了进来，存储在a1寄存器中
+        sfence.vma zero, zero   # 清空快表
 
         # put the saved user a0 in sscratch, so we
-        # can swap it with our a0 (TRAPFRAME) in the last step.
-        ld t0, 112(a0)
-        csrw sscratch, t0
+        # can swap it with our a0 (TRAPFRAME) in the last step.  
+        ld t0, 112(a0)  # 此时a0寄存器的值是trapframe，把p->trapframe->a0的值存在t0寄存器中，在syscall函数中p->trapframe->a0被用来存放系统调用的返回值
+        csrw sscratch, t0  # 又把系统调用的返回值存放在sscratch中
 
         # restore all but a0 from TRAPFRAME
         ld ra, 40(a0)
@@ -134,8 +136,13 @@ userret:
         ld t6, 280(a0)
 
 	# restore user a0, and save TRAPFRAME in sscratch
-        csrrw a0, sscratch, a0
+        csrrw a0, sscratch, a0  # usertrapret函数最后把trapframe作为第一个参数传了进来，保存在a0寄存器，
+        # 这里又把a0和sscratch内容互换了，而在uservec最开始的时候，sscratch寄存器中存的就是trapframe的值，正好形成了闭环
+        # 而这时候a0寄存器的值正好是syscall中系统调用的返回值
         
         # return to user mode and user pc.
         # usertrapret() set up sstatus and sepc.
-        sret
+        sret 
+        # 切换回user mode
+        # SEPC寄存器的数值会拷贝到pc寄存器中
+        # 重新打开中断

@@ -106,8 +106,8 @@ fprintf(int fd, const char *fmt, ...)
 void
 printf(const char *fmt, ...)
 {
-  va_list ap;
+  va_list ap;  // 使用va_list来处理可变参数
 
   va_start(ap, fmt);
-  vprintf(1, fmt, ap);
+  vprintf(1, fmt, ap);  // 文件描述符固定为1
 }

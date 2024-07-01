@@ -133,9 +133,9 @@ runcmd(struct cmd *cmd)
 int
 getcmd(char *buf, int nbuf)
 {
-  fprintf(2, "$ ");
+  fprintf(2, "$ ");  //这里打印console中的$符号，虽然console后边是UART设备，但是这里仍使用fprintf函数向文件描述符2写数据，这看起来就像一个普通的文件
   memset(buf, 0, nbuf);
-  gets(buf, nbuf);
+  gets(buf, nbuf);  //从console读取一行到buf
   if(buf[0] == 0) // EOF
     return -1;
   return 0;

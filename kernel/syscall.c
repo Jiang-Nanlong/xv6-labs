@@ -137,7 +137,9 @@ syscall(void)
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    p->trapframe->a0 = syscalls[num]();
+    p->trapframe->a0 = syscalls[num]();  
+    // 系统调用的返回值存储在p->trapframe->a0中，然后再usertrapret函数中再存到a0寄存器，
+    // 所以用户程序认为a0寄存器中的值就是系统调用的返回值
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);
