@@ -11,9 +11,9 @@
 void
 initlock(struct spinlock *lk, char *name)
 {
-  lk->name = name; //锁的名称
-  lk->locked = 0;  //0表示未上锁，1表示上锁
-  lk->cpu = 0;     //表示当前占有锁的CPU的编号
+  lk->name = name;
+  lk->locked = 0;
+  lk->cpu = 0;
 }
 
 // Acquire the lock.
@@ -21,24 +21,22 @@ initlock(struct spinlock *lk, char *name)
 void
 acquire(struct spinlock *lk)
 {
-  push_off(); // disable interrupts to avoid deadlock.  先关闭中断，会在release结束的时候再次打开
-  if(holding(lk))  // 避免出现课程里讲的当前CPU临界区内再一次申请已经拥有的锁
+  push_off(); // disable interrupts to avoid deadlock.
+  if(holding(lk))
     panic("acquire");
 
   // On RISC-V, sync_lock_test_and_set turns into an atomic swap:
   //   a5 = 1
   //   s1 = &lk->locked
   //   amoswap.w.aq a5, a5, (s1)
-  while(__sync_lock_test_and_set(&lk->locked, 1) != 0)  // test and set操作具有原子性
+  while(__sync_lock_test_and_set(&lk->locked, 1) != 0)
     ;
 
   // Tell the C compiler and the processor to not move loads or stores
   // past this point, to ensure that the critical section's memory
   // references happen strictly after the lock is acquired.
   // On RISC-V, this emits a fence instruction.
-  __sync_synchronize();   // 避免编译器对临界区的代码进行结构上的优化来导致并发过程中出现错误。
-  // 因为指令在并发场景下重新排序是错误的。
-  // synchronize指令，任何在它之前的load/store指令都不能移动到它之后
+  __sync_synchronize();
 
   // Record info about lock acquisition for holding() and debugging.
   lk->cpu = mycpu();

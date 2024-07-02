@@ -104,6 +104,12 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_wait(void);
 extern uint64 sys_write(void);
 extern uint64 sys_uptime(void);
+#ifdef LAB2_SYSCALL_1
+extern uint64 sys_trace(void);
+#endif
+#ifdef LAB2_SYSCALL_2
+extern uint64 sys_sysinfo(void);
+#endif
 
 static uint64 (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -127,7 +133,39 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+#ifdef LAB2_SYSCALL_1
+[SYS_trace]   sys_trace,
+#endif
+[SYS_sysinfo] sys_sysinfo,
 };
+
+#ifdef LAB2_SYSCALL_1
+char* syscalls_name[] = {
+  [SYS_fork]    "sys_fork",
+  [SYS_exit]    "sys_exit",
+  [SYS_wait]    "sys_wait",
+  [SYS_pipe]    "sys_pipe",
+  [SYS_read]    "sys_read",
+  [SYS_kill]    "sys_kill",
+  [SYS_exec]    "sys_exec",
+  [SYS_fstat]   "sys_fstat",
+  [SYS_chdir]   "sys_chdir",
+  [SYS_dup]     "sys_dup",
+  [SYS_getpid]  "sys_getpid",
+  [SYS_sbrk]    "sys_sbrk",
+  [SYS_sleep]   "sys_sleep",
+  [SYS_uptime]  "sys_uptime",
+  [SYS_open]    "sys_open",
+  [SYS_write]   "sys_write",
+  [SYS_mknod]   "sys_mknod",
+  [SYS_unlink]  "sys_unlink",
+  [SYS_link]    "sys_link",
+  [SYS_mkdir]   "sys_mkdir",
+  [SYS_close]   "sys_close",
+  [SYS_trace]   "sys_trace",
+  [SYS_sysinfo] "sys_sysinfo",
+  };
+#endif
 
 void
 syscall(void)
@@ -137,9 +175,11 @@ syscall(void)
 
   num = p->trapframe->a7;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    p->trapframe->a0 = syscalls[num]();  
-    // 系统调用的返回值存储在p->trapframe->a0中，然后再usertrapret函数中再存到a0寄存器，
-    // 所以用户程序认为a0寄存器中的值就是系统调用的返回值
+    p->trapframe->a0 = syscalls[num]();
+#ifdef LAB2_SYSCALL_1
+    if((1<<num) & p->trace_mask)
+      printf("%d: syscall %s -> %d\n", p->pid, syscalls_name[num], p->trapframe->a0);
+#endif
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

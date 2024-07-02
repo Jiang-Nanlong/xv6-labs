@@ -42,7 +42,7 @@ extern struct cpu cpus[NCPU];
 // return-to-user path via usertrapret() doesn't return through
 // the entire kernel call stack.
 struct trapframe {
-  /*   0 */ uint64 kernel_satp;   // kernel page table  每个CPU核心共用一个内核页表，也就是说运行在同一个CPU核心上的进程的kernel_satp值一样
+  /*   0 */ uint64 kernel_satp;   // kernel page table
   /*   8 */ uint64 kernel_sp;     // top of process's kernel stack
   /*  16 */ uint64 kernel_trap;   // usertrap()
   /*  24 */ uint64 epc;           // saved user program counter
@@ -100,7 +100,8 @@ struct proc {
   pagetable_t pagetable;       // User page table
   struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
-  struct file *ofile[NOFILE];  // Open files   存储当前进程打开文件的文件指针，数组中的每一个下标都代表一个文件描述符，而这个下标对应的元素是一个file指针，这样就把结构体和file对应起来了
-  struct inode *cwd;           // Current directory 当前进程所在目录的inode，在执行文件操作时，如果使用的是相对路径，那么这些操作都是相对于cwd进行的
+  struct file *ofile[NOFILE];  // Open files
+  struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  uint64 trace_mask;
 };

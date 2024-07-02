@@ -1,9 +1,3 @@
-/*
- * @Author: Cao Menglong
- * @Date: 2024-04-07 18:32:37
- * @LastEditTime: 2024-04-25 15:19:45
- * @Description: 
- */
 // Physical memory allocator, for user processes,
 // kernel stacks, page-table pages,
 // and pipe buffers. Allocates whole 4096-byte pages.
@@ -22,12 +16,12 @@ extern char end[]; // first address after kernel.
 
 struct run {
   struct run *next;
-}; //一个空闲块内就存储了一个run结构体，而run结构体又只有一个指向下一个空闲块的指针，所以相当于一个空闲块的地址就是run结构体的地址，空闲块内存放指向下一个空闲块的指针
+};
 
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;  //空闲链表受到自旋锁lock的保护
+} kmem;
 
 void
 kinit()
@@ -58,7 +52,7 @@ kfree(void *pa)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);  //为了防止原来指向该区域的已经悬空的指针再次对该内存块读取时，有读取到旧数据
+  memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
 
@@ -86,3 +80,20 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+#ifdef LAB2_SYSCALL_2
+uint64
+freememCount(void){
+  struct run *r;
+
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  uint64 count = 0;
+  while(r){
+    count += PGSIZE;
+    r = r->next;
+  }
+  release(&kmem.lock);
+  return count;
+}
+#endif

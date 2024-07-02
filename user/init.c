@@ -16,12 +16,12 @@ main(void)
 {
   int pid, wpid;
 
-  if(open("console", O_RDWR) < 0){  // 这里把console当做一个文件，以读写的方式打开，因为是第一个打开的文件，所以文件描述符为0
-    mknod("console", CONSOLE, 0);  //使用mknod把文件console注册成设备
+  if(open("console", O_RDWR) < 0){
+    mknod("console", CONSOLE, 0);
     open("console", O_RDWR);
   }
-  dup(0);  // stdout 这里的0就表示上边打开的第一个文件，这里返回文件描述符1
-  dup(0);  // stderr 返回文件描述符2
+  dup(0);  // stdout
+  dup(0);  // stderr
 
   for(;;){
     printf("init: starting sh\n");

@@ -1,6 +1,6 @@
 //
 // Support functions for system calls that involve file descriptors.
-// file.c主要涉及文件系统中关于file层面的操作，向上提供系统调用的接口，向下衔接inode和磁盘层面的操作
+//
 
 #include "types.h"
 #include "riscv.h"
@@ -13,12 +13,11 @@
 #include "stat.h"
 #include "proc.h"
 
-struct devsw devsw[NDEV];  //devsw[i]封装了可以对一个设备施加的所有操作，NDEV是xv6中的最大设备号，值为10
-//这表明在Xv6内部最多只支持注册10种不同设备的驱动程序(事实上只定义了console一种)，且每一种设备只支持读写两种操作
+struct devsw devsw[NDEV];
 struct {
   struct spinlock lock;
   struct file file[NFILE];
-} ftable;  // 系统打开的文件列表
+} ftable;
 
 void
 fileinit(void)
@@ -27,7 +26,6 @@ fileinit(void)
 }
 
 // Allocate a file structure.
-// 在ftable.file数组中分配一个空闲的file，返回文件指针
 struct file*
 filealloc(void)
 {
@@ -46,7 +44,6 @@ filealloc(void)
 }
 
 // Increment ref count for file f.
-// 增加文件的引用计数
 struct file*
 filedup(struct file *f)
 {
@@ -59,7 +56,6 @@ filedup(struct file *f)
 }
 
 // Close file f.  (Decrement ref count, close when reaches 0.)
-// 关闭一个文件，
 void
 fileclose(struct file *f)
 {
@@ -72,15 +68,14 @@ fileclose(struct file *f)
     release(&ftable.lock);
     return;
   }
-  // 运行到这说明file.ref等于0了，但是inode的ref并不一定等于0，所以需要iput操作减少一个对inode的引用计数
-  ff = *f;  // 把*f的内容复制到ff中
+  ff = *f;
   f->ref = 0;
   f->type = FD_NONE;
   release(&ftable.lock);
 
-  if(ff.type == FD_PIPE){  // 如果原类型是FD_PIPE，则调用pipeclose关闭管道
+  if(ff.type == FD_PIPE){
     pipeclose(ff.pipe, ff.writable);
-  } else if(ff.type == FD_INODE || ff.type == FD_DEVICE){  // 如果原类型是FD_INODE或FD_DEVICE，减少一个inode引用计数
+  } else if(ff.type == FD_INODE || ff.type == FD_DEVICE){
     begin_op();
     iput(ff.ip);
     end_op();
@@ -89,7 +84,6 @@ fileclose(struct file *f)
 
 // Get metadata about file f.
 // addr is a user virtual address, pointing to a struct stat.
-// 读取文件f的stat数据并拷贝到addr，成功返回0，失败返回-1
 int
 filestat(struct file *f, uint64 addr)
 {
@@ -109,22 +103,21 @@ filestat(struct file *f, uint64 addr)
 
 // Read from file f.
 // addr is a user virtual address.
-// 从文件描述符f对应的文件中读取n个字符到虚拟地址addr中
 int
 fileread(struct file *f, uint64 addr, int n)
 {
   int r = 0;
 
-  if(f->readable == 0)  // 先判断是否可读
+  if(f->readable == 0)
     return -1;
 
-  if(f->type == FD_PIPE){  // 管道类型
+  if(f->type == FD_PIPE){
     r = piperead(f->pipe, addr, n);
-  } else if(f->type == FD_DEVICE){   // 如果是设备文件
+  } else if(f->type == FD_DEVICE){
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].read)
       return -1;
     r = devsw[f->major].read(1, addr, n);
-  } else if(f->type == FD_INODE){  // 如果是inode
+  } else if(f->type == FD_INODE){
     ilock(f->ip);
     if((r = readi(f->ip, 1, addr, f->off, n)) > 0)
       f->off += r;
@@ -138,31 +131,30 @@ fileread(struct file *f, uint64 addr, int n)
 
 // Write to file f.
 // addr is a user virtual address.
-// 根据传入的文件描述符的类型选择不同的写操作
 int
 filewrite(struct file *f, uint64 addr, int n)
 {
   int r, ret = 0;
 
-  if(f->writable == 0)  // 先判断是否可写
+  if(f->writable == 0)
     return -1;
 
-  if(f->type == FD_PIPE){  // 如果是管道
+  if(f->type == FD_PIPE){
     ret = pipewrite(f->pipe, addr, n);
-  } else if(f->type == FD_DEVICE){  // 如果是设备文件
+  } else if(f->type == FD_DEVICE){
     if(f->major < 0 || f->major >= NDEV || !devsw[f->major].write)
       return -1;
     ret = devsw[f->major].write(1, addr, n);
-  } else if(f->type == FD_INODE){  // 如果是inode
+  } else if(f->type == FD_INODE){
     // write a few blocks at a time to avoid exceeding
     // the maximum log transaction size, including
     // i-node, indirect block, allocation blocks,
     // and 2 blocks of slop for non-aligned writes.
     // this really belongs lower down, since writei()
     // might be writing a device like the console.
-    int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;  // 计算一次最多写入多少字节
+    int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
     int i = 0;
-    while(i < n){  // 使用while循环，把n个字节分批次写入
+    while(i < n){
       int n1 = n - i;
       if(n1 > max)
         n1 = max;

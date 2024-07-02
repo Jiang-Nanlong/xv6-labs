@@ -23,7 +23,7 @@ extern char trampoline[]; // trampoline.S
 
 // initialize the proc table at boot time.
 void
-procinit(void)  // ÎªprocÊı×éÖĞµÄÃ¿Ò»¸öproc·ÖÅäºÃÁËÄÚºËÕ»
+procinit(void)
 {
   struct proc *p;
   
@@ -59,7 +59,7 @@ cpuid()
 struct cpu*
 mycpu(void) {
   int id = cpuid();
-  struct cpu *c = &cpus[id];  //»ñÈ¡µ±Ç°cpuµÄÖ¸Õë
+  struct cpu *c = &cpus[id];
   return c;
 }
 
@@ -68,7 +68,7 @@ struct proc*
 myproc(void) {
   push_off();
   struct cpu *c = mycpu();
-  struct proc *p = c->proc;  //»ñÈ¡µ±Ç°ÕıÔÚÔËĞĞµÄ½ø³ÌÖ¸Õë
+  struct proc *p = c->proc;
   pop_off();
   return p;
 }
@@ -96,7 +96,7 @@ allocproc(void)
 
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
-    if(p->state == UNUSED) {  // ÔÚprocÊı×éÖĞÕÒµ½Ò»¸ö±ê¼ÇÎªUNUSEDµÄÎ»ÖÃ£¬È»ºóÎªÕâ¸öÎ»ÖÃµÄprocÉèÖÃÄÚÈİ
+    if(p->state == UNUSED) {
       goto found;
     } else {
       release(&p->lock);
@@ -124,8 +124,11 @@ found:
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
-  p->context.ra = (uint64)forkret;  // p->state±»ÉèÎªRUNNABLEÊÇÔÚforkº¯ÊıÖĞ
+  p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+#ifdef LAB2_SYSCALL_1
+  p->trace_mask = 0;
+#endif
 
   return p;
 }
@@ -155,7 +158,7 @@ freeproc(struct proc *p)
 // Create a user page table for a given process,
 // with no user memory, but with trampoline pages.
 pagetable_t
-proc_pagetable(struct proc *p)  // ÎªÒ»¸öÓÃ»§½ø³Ì´´½¨Ò»¸öÒ³±í£¬²¢½«trampolineºÍtrapframeÒ³ÃæÓ³Éä½øÈ¥£¬ÆäÓàµÄ²¿·ÖÏÈ²»ÉèÖÃ
+proc_pagetable(struct proc *p)
 {
   pagetable_t pagetable;
 
@@ -190,8 +193,8 @@ proc_pagetable(struct proc *p)  // ÎªÒ»¸öÓÃ»§½ø³Ì´´½¨Ò»¸öÒ³±í£¬²¢½«trampolineºÍt
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
-  uvmunmap(pagetable, TRAMPOLINE, 1, 0);  //ÒªÉ¾µôµÄ¾ÉtrampolineºÍĞÂµÄtrampoline¶¼Ö¸ÏòÒ»¸öµØ·½£¬ËùÒÔÕâÀïÖ»É¾³ıÓ³Éä¹ØÏµ£¬²¢²»É¾³ıÎïÀíÄÚ´æ£¬¿ÉÒÔ¿´proc_pagetableº¯Êı
-  uvmunmap(pagetable, TRAPFRAME, 1, 0);  //Í¬ÉÏ
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);
   uvmfree(pagetable, sz);
 }
 
@@ -230,7 +233,7 @@ userinit(void)
 
   p->state = RUNNABLE;
 
-  release(&p->lock);   // ÕâÀïÊÍ·Åallocprocº¯ÊıÄÚÉêÇëµÄËø
+  release(&p->lock);
 }
 
 // Grow or shrink user memory by n bytes.
@@ -242,11 +245,11 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
-  if(n > 0){  //À©´ó½ø³ÌÄÚ´æ
+  if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
-  } else if(n < 0){  //ËõĞ¡½ø³ÌÄÚ´æ
+  } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
@@ -268,7 +271,7 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){  //½¨Á¢ÏàÍ¬µÄÒ³±í£¬·ÖÅäÏàÍ¬µÄÄÚ´æ£¬²¢¿½±´ÄÚÈİµ½ĞÂÄÚ´æ
+  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
     release(&np->lock);
     return -1;
@@ -290,10 +293,12 @@ fork(void)
   np->cwd = idup(p->cwd);
 
   safestrcpy(np->name, p->name, sizeof(p->name));
-
+#ifdef LAB2_SYSCALL_1
+  np->trace_mask = p->trace_mask;
+#endif
   pid = np->pid;
 
-  np->state = RUNNABLE;   // ÉèÖÃĞÂ½ø³ÌµÄstateÎªRUNNABLE£¬ÕâÑù¾Í¿ÉÒÔ±»schedulerº¯Êıµ÷¶È
+  np->state = RUNNABLE;
 
   release(&np->lock);
 
@@ -330,18 +335,18 @@ reparent(struct proc *p)
 // An exited process remains in the zombie state
 // until its parent calls wait().
 void
-exit(int status)  // ¹Ø±Õ½ø³Ì´ò¿ªµÄÎÄ¼ş£¬¸øµ±Ç°½ø³ÌµÄ×Ó½ø³Ì¸ü»»¸¸½ø³Ì£¬Éèµ±Ç°½ø³Ì×´Ì¬ÎªZOMBIE£¬×îºóµÈ´ı¸¸½ø³Ìµ÷ÓÃwait»ØÊÕ×ÊÔ´
+exit(int status)
 {
   struct proc *p = myproc();
 
-  if(p == initproc)   // init½ø³Ì²»ÄÜÍË³ö
+  if(p == initproc)
     panic("init exiting");
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){
       struct file *f = p->ofile[fd];
-      fileclose(f);   // ¼õÉÙÎÄ¼şµÄÒıÓÃ¼ÆÊı
+      fileclose(f);
       p->ofile[fd] = 0;
     }
   }
@@ -367,7 +372,7 @@ exit(int status)  // ¹Ø±Õ½ø³Ì´ò¿ªµÄÎÄ¼ş£¬¸øµ±Ç°½ø³ÌµÄ×Ó½ø³Ì¸ü»»¸¸½ø³Ì£¬Éèµ±Ç°½ø³
   // to a dead or wrong process; proc structs are never re-allocated
   // as anything else.
   acquire(&p->lock);
-  struct proc *original_parent = p->parent;   // Èç¹ûÔËĞĞµ½ÕâÀïÇĞ»»½ø³ÌÁË£¬ÇĞ»»µ½¸¸½ø³ÌÁË£¬¸¸½ø³ÌÒ²ÍË³öÁËÔõÃ´°ì£¿£¿£¿
+  struct proc *original_parent = p->parent;
   release(&p->lock);
   
   // we need the parent's lock in order to wake it up from wait().
@@ -377,25 +382,25 @@ exit(int status)  // ¹Ø±Õ½ø³Ì´ò¿ªµÄÎÄ¼ş£¬¸øµ±Ç°½ø³ÌµÄ×Ó½ø³Ì¸ü»»¸¸½ø³Ì£¬Éèµ±Ç°½ø³
   acquire(&p->lock);
 
   // Give any children to init.
-  reparent(p);  // ÉèÖÃµ±Ç°ÒªÍË³öµÄ½ø³ÌµÄ×Ó½ø³ÌµÄ¸¸½ø³ÌÎªinitproc£¬ÒòÎªxv6ÖĞ×Ó½ø³Ì×ÊÔ´µÄÊÍ·ÅÒªÍ¨¹ıËüµÄ¸¸½ø³ÌÀ´ÊµÏÖ¡£
+  reparent(p);
 
   // Parent might be sleeping in wait().
-  wakeup1(original_parent);  // »½ĞÑµ±Ç°½ø³ÌµÄ¸¸½ø³Ì
-                            // ¿ªÊ¼µÄÊ±ºòÎÒÔÚÏëÎªÊ²Ã´»½ĞÑ¸¸½ø³ÌÕâÒ»ĞĞ²»·ÅÔÚÉèÎªZOMBIEÖ®ºó£¬ºóÀ´·¢ÏÖÕâ¼¸¾ä´¦ÓÚ¸¸½ø³ÌµÄËøÄÚ£¬¶øwait½ø³ÌÓÖÒªµ÷ÓÃ¸¸½ø³ÌµÄËø£¬ËùÒÔÕâ¼¸¾ä»°µÄË³ĞòÎŞËùÎ½
+  wakeup1(original_parent);
+
   p->xstate = status;
-  p->state = ZOMBIE;  // ½©Ê¬Ì¬
+  p->state = ZOMBIE;
 
   release(&original_parent->lock);
 
   // Jump into the scheduler, never to return.
-  sched();  // ¸Ã½ø³Ì»áÏÂ´¦Àí»ú£¬²¢ÇÒ²»ÔÙÔËĞĞ£¬ÒòÎªµ÷ÓÃÆ÷Ïß³ÌÖ»µ÷¶ÈstateÎªRUNNABLEµÄ½ø³Ì
+  sched();
   panic("zombie exit");
 }
 
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
-wait(uint64 addr)  // ±éÀúµ±Ç°½ø³ÌËùÓĞµÄ×Ó½ø³Ì£¬¼ì²éÊÇ·ñÓĞ×Ó½ø³Ì´¦ÓÚZOMBIE×´Ì¬¡£Èç¹ûÓĞ£¬¾ÍÊÍ·Å×ÊÔ´²¢·µ»Ø×Ó½ø³Ìpid£»·ñÔò£¬½øÈëË¯ÃßµÈ´ı×Ó½ø³ÌÍË³ö
+wait(uint64 addr)
 {
   struct proc *np;
   int havekids, pid;
@@ -426,10 +431,10 @@ wait(uint64 addr)  // ±éÀúµ±Ç°½ø³ÌËùÓĞµÄ×Ó½ø³Ì£¬¼ì²éÊÇ·ñÓĞ×Ó½ø³Ì´¦ÓÚZOMBIE×´Ì¬¡£
             release(&p->lock);
             return -1;
           }
-          freeproc(np);  // ÊÍ·Å×Ó½ø³ÌµÄ×ÊÔ´
+          freeproc(np);
           release(&np->lock);
           release(&p->lock);
-          return pid;  // waitµ÷ÓÃ³É¹¦µÄ»°£¬·µ»Ø×Ó½ø³ÌµÄpid
+          return pid;
         }
         release(&np->lock);
       }
@@ -442,7 +447,7 @@ wait(uint64 addr)  // ±éÀúµ±Ç°½ø³ÌËùÓĞµÄ×Ó½ø³Ì£¬¼ì²éÊÇ·ñÓĞ×Ó½ø³Ì´¦ÓÚZOMBIE×´Ì¬¡£
     }
     
     // Wait for a child to exit.
-    sleep(p, &p->lock);  //DOC: wait-sleep  ¸¸½ø³ÌÖØĞÂË¯Ãß£¬µÈ´ıÏÂÒ»´Î±»×Ó½ø³Ì»½ĞÑ
+    sleep(p, &p->lock);  //DOC: wait-sleep
   }
 }
 
@@ -454,27 +459,26 @@ wait(uint64 addr)  // ±éÀúµ±Ç°½ø³ÌËùÓĞµÄ×Ó½ø³Ì£¬¼ì²éÊÇ·ñÓĞ×Ó½ø³Ì´¦ÓÚZOMBIE×´Ì¬¡£
 //  - eventually that process transfers control
 //    via swtch back to the scheduler.
 void
-scheduler(void)   // Ã¿¸öCPU¶¼ÓĞÒ»¸ö×Ô¼ºµÄµ÷¶ÈÆ÷Ïß³Ì
+scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
   
-  c->proc = 0;   // ½«CPUÉÏÔËĞĞµÄ½ø³ÌÉèÎª¿Õ
+  c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();  // µ÷ÓÃÁËintr_onº¯ÊıµÄCPUºË»á´ò¿ªÖĞ¶Ï£¬Ã¿¸öCPUºË¶¼»áµ÷ÓÃÕâ¸öº¯Êı
+    intr_on();
     
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);  // ÕâÀïÓĞÒÉÎÊ£¬Èç¹û½«Òª±»µ÷¶ÈµÄ½ø³ÌÖ®Ç°ÒÑ¾­±»µ÷¶È¹ıÁË£¬ÄÇÃ´Õâ¸öËø»áÔÚÄÄÀï±»ÊÍ·ÅÄØ£¿£¿£¿
+      acquire(&p->lock);
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
-        p->state = RUNNING;   // ÉèÖÃ½ø³Ì×´Ì¬ÎªÔËĞĞÌ¬
-        c->proc = p;          // ĞÂ½ø³ÌÉÏ´¦Àí»ú
-        swtch(&c->context, &p->context);  // ´Ë´¦Ìø×ªµ½ÓÃ»§½ø³Ì¶ÔÓ¦µÄÄÚºË½ø³Ì¼ÌĞøÖ´ĞĞ£¬
-        // ´ËÊ±±£´æÔÚc->context.raÖĞµÄÄÚÈİ¾ÍÊÇµ±Ç°Ö¸ÁîµÄÏÂÒ»ÌõÖ¸ÁîµÄµØÖ·
+        p->state = RUNNING;
+        c->proc = p;
+        swtch(&c->context, &p->context);
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -506,7 +510,7 @@ sched(void)
 
   if(!holding(&p->lock))
     panic("sched p->lock");
-  if(mycpu()->noff != 1)   // Õâ¸öµØ·½ÊÇÎªÁË¼ì²âµ±Ç°×¼±¸ÏÂ´¦Àí»úµÄ½ø³ÌÊÇ·ñÉêÇëÁËÆäËûËø£¬ÒòÎªacquireÉêÇëÆäËûËøÊ±»ámycpu()->noff += 1£¬ÕâÑùµÄ»°£¬Èç¹û´Ë´¦noff£¡=1ËµÃ÷»¹ÓĞÆäËûËø£¬¶øÕâÓĞ¿ÉÄÜÔì³ÉËÀËø£¬ËùÒÔ´Ë´¦Òª¼ì²énoff
+  if(mycpu()->noff != 1)
     panic("sched locks");
   if(p->state == RUNNING)
     panic("sched running");
@@ -514,7 +518,7 @@ sched(void)
     panic("sched interruptible");
 
   intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);  // ´Ë´¦Ìø×ª»Øµ÷¶ÈÆ÷½ø³Ì
+  swtch(&p->context, &mycpu()->context);
   mycpu()->intena = intena;
 }
 
@@ -523,7 +527,7 @@ void
 yield(void)
 {
   struct proc *p = myproc();
-  acquire(&p->lock);  // Õâ¸öËøÒªÔÚschedulerº¯ÊıÖĞswtchº¯ÊıÌø×ª¹ıÈ¥ÒÔºó²ÅÊÍ·Å
+  acquire(&p->lock);
   p->state = RUNNABLE;
   sched();
   release(&p->lock);
@@ -532,12 +536,12 @@ yield(void)
 // A fork child's very first scheduling by scheduler()
 // will swtch to forkret.
 void
-forkret(void)  // Ò»¸ö½ø³ÌÊ×´Î±»µ÷¶ÈÊ±»áÔËĞĞµ½ÕâÀï
+forkret(void)
 {
   static int first = 1;
 
   // Still holding p->lock from scheduler.
-  release(&myproc()->lock);  // ´Ë´¦ÊÍ·Åschedulerº¯ÊıÖĞÉêÇëµÄËø
+  release(&myproc()->lock);
 
   if (first) {
     // File system initialization must be run in the context of a
@@ -547,14 +551,13 @@ forkret(void)  // Ò»¸ö½ø³ÌÊ×´Î±»µ÷¶ÈÊ±»áÔËĞĞµ½ÕâÀï
     fsinit(ROOTDEV);
   }
 
-  usertrapret();  // È»ºó·µ»Øµ½ĞÂ½ø³ÌµÄÓÃ»§¿Õ¼ä¼ÌĞøÖ´ĞĞÓÃ»§¿Õ¼äµÄ´úÂë£¬×Ó½ø³ÌÊÇÍ¨¹ıforkº¯Êı´´½¨µÄ£¬ËùÒÔÓĞ¸¸½ø³ÌµÄtrapframe
-  // ¿ÉÒÔ·µ»Øµ½¸¸½ø³ÌÖ®Ç°µÄÎ»ÖÃ¼ÌĞøÖ´ĞĞ
+  usertrapret();
 }
 
 // Atomically release lock and sleep on chan.
 // Reacquires lock when awakened.
 void
-sleep(void *chan, struct spinlock *lk)  // µÚ¶ş¸ö²ÎÊıµÄ×÷ÓÃÊÇÎªÁË·ÀÖ¹lost wakeup
+sleep(void *chan, struct spinlock *lk)
 {
   struct proc *p = myproc();
   
@@ -565,12 +568,12 @@ sleep(void *chan, struct spinlock *lk)  // µÚ¶ş¸ö²ÎÊıµÄ×÷ÓÃÊÇÎªÁË·ÀÖ¹lost wakeup
   // (wakeup locks p->lock),
   // so it's okay to release lk.
   if(lk != &p->lock){  //DOC: sleeplock0
-    acquire(&p->lock);  //DOC: sleeplock1  ÕâÀïÉêÇëµÄ½ø³ÌËø»¹ÊÇ»áÔÚschedulerº¯ÊıÖĞÊÍ·Å
+    acquire(&p->lock);  //DOC: sleeplock1
     release(lk);
   }
 
   // Go to sleep.
-  p->chan = chan;   // ÎªÁËÔÚ»½ĞÑµÄÊ±ºò²éÕÒ¶ÔÓ¦µÄchan
+  p->chan = chan;
   p->state = SLEEPING;
 
   sched();
@@ -617,18 +620,15 @@ wakeup1(struct proc *p)
 // The victim won't exit until it tries to return
 // to user space (see usertrap() in trap.c).
 int
-kill(int pid)   // killº¯ÊıÖ»ÊÇĞŞ¸Äp->killed£¬ÕæÕıµÄexitÔÚusertrapÖĞ¡£
-{               // ËùÒÔÓÃkillÊÍ·ÅÒ»¸ö½ø³Ì£¬µ½Õâ¸ö½ø³ÌÕæÕı±»ÊÍ·Å£¬ÖĞ¼ä¿ÉÄÜ»áÓĞÃ÷ÏÔµÄÑÓ³Ù
+kill(int pid)
+{
   struct proc *p;
 
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
     if(p->pid == pid){
       p->killed = 1;
-      if(p->state == SLEEPING){  // Èç¹ûµ±Ç°½ø³ÌÕıÔÚË¯Ãß£¬Ôò»½ĞÑËü¡£
-      // ÒòÎªËüÖ®ËùÒÔË¯ÃßÊÇÕıÔÚµÈ´ıÄ³ÖÖ×ÊÔ´£¬¶øÕæÕıµÄÊÍ·ÅÓÖÔÚ½ø³Ì½øÈëÄÚºËÌ¬ÒÔºó£¬ËùÒÔÎÒÃÇ²¢²»ÖªµÀÊ²Ã´Ê±ºò»áÓĞÕâÖÖ×ÊÔ´Âú×ã¡£
-      // ¾Í±ÈÈçÔÚµÈ´ıÊäÈë×Ö·û£¬µ«ÊÇ²¢²»È·¶¨Ã÷ÌìÖ®Ç°ÄÜ²»ÄÜÊäÈë£¬ËùÒÔÕâÊ±ºò¸Ã½ø³ÌÓÖ±»killÁË£¬ËùÒÔÖ±½Ó»½ĞÑ¡£
-      // ²»¹ıÕâÀïËäËµÊÇ°Ñp->killedÖÃÎª1ÁË£¬µ«ÊÇÊÇ·ñÒªÁ¢¼´ÊÍ·Å£¬»¹ÊÇÒª¿´½ø³ÌÀàĞÍºÍ½ø³ÌµÄÉè¼Æ¡£
+      if(p->state == SLEEPING){
         // Wake process from sleep().
         p->state = RUNNABLE;
       }
@@ -658,7 +658,6 @@ either_copyout(int user_dst, uint64 dst, void *src, uint64 len)
 // Copy from either a user address, or kernel address,
 // depending on usr_src.
 // Returns 0 on success, -1 on error.
-// ´Ósrc¸´ÖÆlen¸ö×Ö½Úµ½dstÖĞ
 int
 either_copyin(void *dst, int user_src, uint64 src, uint64 len)
 {
@@ -699,3 +698,17 @@ procdump(void)
     printf("\n");
   }
 }
+
+#ifdef LAB2_SYSCALL_2
+uint64
+processCount(void){
+  uint64 count = 0;
+  for(struct proc *p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->state != UNUSED)
+      count++;
+    release(&p->lock);
+  }
+  return count;
+}
+#endif

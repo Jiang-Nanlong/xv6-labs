@@ -1,9 +1,3 @@
-/*
- * @Author: Cao Menglong
- * @Date: 2024-04-07 18:32:37
- * @LastEditTime: 2024-05-30 10:46:58
- * @Description: 
- */
 #include "types.h"
 #include "riscv.h"
 #include "defs.h"
@@ -12,6 +6,9 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#ifdef LAB2_SYSCALL_2
+#include "sysinfo.h"
+#endif
 
 uint64
 sys_exit(void)
@@ -101,3 +98,32 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+#ifdef LAB2_SYSCALL_1
+uint64
+sys_trace(void){
+  int mask;
+  if(argint(0, &mask) < 0)
+    return -1;
+  
+  myproc()->trace_mask = mask;
+  return 0;
+}
+#endif
+
+#ifdef LAB2_SYSCALL_2
+uint64
+sys_sysinfo(void){
+  uint64 addr;
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  
+  struct sysinfo info;
+  info.freemem = freememCount();
+  info.nproc = processCount();
+  
+  if(copyout(myproc()->pagetable, addr, (char *)&info, sizeof(info)) < 0)
+    return -1;
+  return 0;
+}
+#endif

@@ -24,17 +24,17 @@
 #include "buf.h"
 
 struct {
-  struct spinlock lock;  // 用来保护bcache的内部数据，而buf内的sleeplock用来保护单个block的cache
+  struct spinlock lock;
   struct buf buf[NBUF];
 
   // Linked list of all buffers, through prev/next.
   // Sorted by how recently the buffer was used.
   // head.next is most recent, head.prev is least.
-  struct buf head;   // 这是一个头节点，什么都不保存
+  struct buf head;
 } bcache;
 
 void
-binit(void)   // buf[NBUF]中的buf结构体，连起来构成一个环形的双向链表
+binit(void)
 {
   struct buf *b;
 
@@ -55,7 +55,6 @@ binit(void)   // buf[NBUF]中的buf结构体，连起来构成一个环形的双向链表
 // Look through buffer cache for block on device dev.
 // If not found, allocate a buffer.
 // In either case, return locked buffer.
-// 查找给定的blockno对应的缓冲块，如果没有找到就分配一个
 static struct buf*
 bget(uint dev, uint blockno)
 {
@@ -68,15 +67,15 @@ bget(uint dev, uint blockno)
     if(b->dev == dev && b->blockno == blockno){
       b->refcnt++;
       release(&bcache.lock);
-      acquiresleep(&b->lock);  // 申请缓冲块的锁，如果获得该锁就运行，否则就睡眠，并把当前进程加入到该锁的等待队列。releasesleep函数中会调用wakeup来唤醒等待队列中的下一个进程
+      acquiresleep(&b->lock);
       return b;
     }
   }
 
   // Not cached.
   // Recycle the least recently used (LRU) unused buffer.
-  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){  // 超找LRU块的时候，从head沿prev查找，越先被访问到的越是长时间没有使用的，因为刚release的块插入到head.next后，也就是沿prev这条线最后的地方
-    if(b->refcnt == 0) {  // 这里驱逐缓冲块的话，也只能是驱逐引用计数为0的块
+  for(b = bcache.head.prev; b != &bcache.head; b = b->prev){
+    if(b->refcnt == 0) {
       b->dev = dev;
       b->blockno = blockno;
       b->valid = 0;
@@ -90,14 +89,13 @@ bget(uint dev, uint blockno)
 }
 
 // Return a locked buf with the contents of the indicated block.
-// 从磁盘中读取盘块放入缓冲区
 struct buf*
 bread(uint dev, uint blockno)
 {
   struct buf *b;
 
   b = bget(dev, blockno);
-  if(!b->valid) {  // 如果这个缓冲块是刚分配的
+  if(!b->valid) {
     virtio_disk_rw(b, 0);
     b->valid = 1;
   }
@@ -105,7 +103,6 @@ bread(uint dev, uint blockno)
 }
 
 // Write b's contents to disk.  Must be locked.
-// bwrite是把block cache实际写入磁盘的函数
 void
 bwrite(struct buf *b)
 {
@@ -116,7 +113,6 @@ bwrite(struct buf *b)
 
 // Release a locked buffer.
 // Move to the head of the most-recently-used list.
-// 释放一块缓冲区
 void
 brelse(struct buf *b)
 {
@@ -126,8 +122,8 @@ brelse(struct buf *b)
   releasesleep(&b->lock);
 
   acquire(&bcache.lock);
-  b->refcnt--;   // refcnt --以后的结果是还在等待使用b cache的进程的数量，因为进程在bget中会先自增refcnt，然后再睡眠等待
-  if (b->refcnt == 0) {   // 把要释放的缓冲块放在head.next上
+  b->refcnt--;
+  if (b->refcnt == 0) {
     // no one is waiting for it.
     b->next->prev = b->prev;
     b->prev->next = b->next;

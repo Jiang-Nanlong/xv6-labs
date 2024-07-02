@@ -188,7 +188,7 @@ w_mtvec(uint64 x)
 
 // supervisor address translation and protection;
 // holds the address of the page table.
-static inline void  
+static inline void 
 w_satp(uint64 x)
 {
   asm volatile("csrw satp, %0" : : "r" (x));
